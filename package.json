@@ -1,0 +1,14 @@
+{
+  "name": "todo-api-server",
+  "version": "1.0.0",
+  "description": "Local API server to read/write TodoDB.db so the TodoApp updates the real database",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  }
+}
