@@ -63,6 +63,12 @@ try {
     db.exec('ALTER TABLE TodosTB ADD COLUMN Reminder3Minutes INTEGER DEFAULT 0');
     console.log('Migrated TodosTB: added Reminder3Minutes');
   }
+  try {
+    db.prepare('SELECT RemindersJSON FROM TodosTB LIMIT 1').get();
+  } catch (e) {
+    db.exec('ALTER TABLE TodosTB ADD COLUMN RemindersJSON TEXT');
+    console.log('Migrated TodosTB: added RemindersJSON');
+  }
 
   // Migration: remove FK from AuditTB if present (allows delete to work; audit rows stay after task delete)
   const fkList = db.prepare("PRAGMA foreign_key_list(AuditTB)").all();
@@ -107,7 +113,7 @@ try {
 app.get('/todos', (req, res) => {
   try {
     const rows = db.prepare(
-      'SELECT TaskID, Task, Date, Time, Completed, Notes, CompletDateTime, ReminderMinutes, Reminder2Minutes, Reminder3Minutes FROM TodosTB ORDER BY Date DESC, Time DESC'
+      'SELECT TaskID, Task, Date, Time, Completed, Notes, CompletDateTime, ReminderMinutes, Reminder2Minutes, Reminder3Minutes, RemindersJSON FROM TodosTB ORDER BY Date DESC, Time DESC'
     ).all();
     res.json(rows);
   } catch (err) {
@@ -129,14 +135,15 @@ app.get('/todos/:id', (req, res) => {
 // POST create todo
 app.post('/todos', (req, res) => {
   try {
-    const { Task, DueDate, DueTime, Completed, Notes, CompletDateTime, ReminderMinutes, Reminder2Minutes, Reminder3Minutes } = req.body;
+    const { Task, DueDate, DueTime, Completed, Notes, CompletDateTime, ReminderMinutes, Reminder2Minutes, Reminder3Minutes, RemindersJSON } = req.body;
     const Date = DueDate ?? req.body.Date ?? null;
     const Time = DueTime ?? req.body.Time ?? null;
     const R1 = ReminderMinutes ?? 0, R2 = Reminder2Minutes ?? 0, R3 = Reminder3Minutes ?? 0;
+    const RJ = RemindersJSON != null && RemindersJSON !== '' ? String(RemindersJSON) : null;
     const stmt = db.prepare(
-      'INSERT INTO TodosTB (Task, "Date", "Time", Completed, Notes, CompletDateTime, ReminderMinutes, Reminder2Minutes, Reminder3Minutes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO TodosTB (Task, "Date", "Time", Completed, Notes, CompletDateTime, ReminderMinutes, Reminder2Minutes, Reminder3Minutes, RemindersJSON) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    const result = stmt.run(Task, Date, Time, Completed ?? 0, Notes ?? null, CompletDateTime ?? null, R1, R2, R3);
+    const result = stmt.run(Task, Date, Time, Completed ?? 0, Notes ?? null, CompletDateTime ?? null, R1, R2, R3, RJ);
     res.status(201).json({ TaskID: result.lastInsertRowid });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -146,14 +153,15 @@ app.post('/todos', (req, res) => {
 // PUT update todo
 app.put('/todos/:id', (req, res) => {
   try {
-    const { Task, DueDate, DueTime, Completed, Notes, CompletDateTime, ReminderMinutes, Reminder2Minutes, Reminder3Minutes } = req.body;
+    const { Task, DueDate, DueTime, Completed, Notes, CompletDateTime, ReminderMinutes, Reminder2Minutes, Reminder3Minutes, RemindersJSON } = req.body;
     const Date = DueDate ?? req.body.Date ?? null;
     const Time = DueTime ?? req.body.Time ?? null;
     const R1 = ReminderMinutes ?? 0, R2 = Reminder2Minutes ?? 0, R3 = Reminder3Minutes ?? 0;
+    const RJ = RemindersJSON != null && RemindersJSON !== '' ? String(RemindersJSON) : null;
     const stmt = db.prepare(
-      'UPDATE TodosTB SET Task = ?, "Date" = ?, "Time" = ?, Completed = ?, Notes = ?, CompletDateTime = ?, ReminderMinutes = ?, Reminder2Minutes = ?, Reminder3Minutes = ? WHERE TaskID = ?'
+      'UPDATE TodosTB SET Task = ?, "Date" = ?, "Time" = ?, Completed = ?, Notes = ?, CompletDateTime = ?, ReminderMinutes = ?, Reminder2Minutes = ?, Reminder3Minutes = ?, RemindersJSON = ? WHERE TaskID = ?'
     );
-    stmt.run(Task, Date, Time, Completed ?? 0, Notes ?? null, CompletDateTime ?? null, R1, R2, R3, req.params.id);
+    stmt.run(Task, Date, Time, Completed ?? 0, Notes ?? null, CompletDateTime ?? null, R1, R2, R3, RJ, req.params.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -192,6 +200,18 @@ app.patch('/todos/:id/toggle', (req, res) => {
 // Health check (for app to detect server)
 app.get('/ping', (req, res) => {
   res.json({ ok: true, db: 'TodoDB.db' });
+});
+
+// Reset: delete all todos and audit rows (empty DB)
+app.post('/reset', (req, res) => {
+  try {
+    db.exec('DELETE FROM TodosTB');
+    db.exec('DELETE FROM AuditTB');
+    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('TodosTB','AuditTB')");
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => {
